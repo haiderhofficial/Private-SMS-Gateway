@@ -214,7 +214,7 @@ device_state (or cache)
 7. **Config / `.env.example`** listing: device token, enqueue token, default country code, timeouts, alert email/Telegram settings.
 8. **Automated tests** covering: claim atomicity (two parallel polls never get the same message), 204 when empty, 401 on bad token,
    state-machine transitions, idempotent duplicate results, out-of-order results, timeout and expiry jobs.
-9. **A short README** with setup steps and the **exact values to type into the app** (Poll URL, Result URL with `{id}`, auth method, token).
+9. **A short README** with setup steps, the **exact values to type into the app** (Poll URL, Result URL with `{id}`, auth method, token), **and a ready-to-import settings JSON block** (section 13) filled in for the user's domain and token.
 10. *(Optional)* a tiny admin page or CLI command listing recent messages with status, error and device last-seen.
 
 ## 10. Do and do not
@@ -274,9 +274,106 @@ curl -i -X POST -H "Authorization: Bearer $T" -H "Content-Type: application/json
 | Token | the device token from the server's config |
 | JSON field names | leave at defaults: `id`, `to`, `body`, `sim` |
 
-The AI should print these exact values, filled in for the user's domain, at the end of its README.
+The AI should print these exact values, filled in for the user's domain, at the end of its README, **and also give the one-paste alternative in section 13**.
+
+
+## 13. Ready-to-import settings (clipboard import)
+
+The app can load all of its settings from a JSON object on the clipboard, so the user does not have to type anything.
+**The AI must output this block at the end of its answer and in the README**, with the user's real domain and token filled in.
+
+**How the user imports it**
+1. Copy the JSON (only the JSON, nothing before or after it; no ```` ``` ```` fences, no comments).
+2. In the app open **Settings**, scroll to **Backup**, tap **Import settings from clipboard**.
+3. A toast says *Settings imported*. If it says *Clipboard doesn't contain valid settings JSON*, the clipboard held something else or the JSON is malformed.
+4. Go to **Status** and press **Poll now** to test, then switch the gateway on.
+
+**Import rules (how the app behaves)**
+* The whole clipboard text must parse as one JSON **object**.
+* Keys that are present overwrite the phone's current value; keys that are absent keep the phone's current value;
+  unknown keys are ignored. **Include every key below** so the result is exactly what the AI intended.
+* `token` is imported if present. (The app's own *Export* never includes the token, but import accepts it.)
+* Numbers must be JSON numbers and booleans must be `true`/`false` (not strings).
+
+**All keys, types and defaults**
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `pollUrl` | string | `""` | Full poll URL, e.g. `https://example.com/api/device/sms/next` |
+| `pollMethod` | `"GET"` or `"POST"` | `"GET"` | HTTP method for polling |
+| `resultUrl` | string | `""` | Full result URL containing `{id}`, or `""` to disable reporting |
+| `authType` | `"NONE"`, `"BEARER"`, `"BASIC"`, `"HEADER"`, `"QUERY"` | `"BEARER"` | Auth method (section 5). Must be upper case |
+| `authUser` | string | `""` | Username (only for `BASIC`) |
+| `token` | string | `""` | Bearer token / API key / Basic password |
+| `authName` | string | `"X-API-Key"` | Header name (`HEADER`) or query parameter name (`QUERY`); unused for the others |
+| `extraHeaders` | string | `""` | Extra headers, one per line as `Name: value`, lines separated by `\n` |
+| `timeoutSec` | int | `20` | HTTP timeout |
+| `pollIntervalSec` | int | `15` | Seconds between polls (minimum 3) |
+| `maxBackoffSec` | int | `300` | Longest wait after repeated errors |
+| `wifiOnly` | bool | `false` | Poll only on Wi-Fi/Ethernet |
+| `quietEnabled` | bool | `false` | Do not poll during quiet hours |
+| `quietStartHour` | int 0-23 | `23` | Quiet hours start |
+| `quietEndHour` | int 0-23 | `6` | Quiet hours end |
+| `simSlot` | `0`, `1` or `2` | `0` | 0 = phone default, 1 = SIM 1, 2 = SIM 2 |
+| `sendDelaySec` | int | `3` | Pause between messages in a batch |
+| `maxPerHour` | int | `0` | Hourly send cap (0 = unlimited) |
+| `defaultCountryCode` | string | `""` | Digits only, e.g. `"92"`; turns `0300...` into `+92300...` |
+| `reportDelivery` | bool | `true` | Ask the carrier for delivery reports and send `delivered` |
+| `idField` | string | `"id"` | Name of the id field in the poll response |
+| `toField` | string | `"to"` | Name of the phone-number field |
+| `bodyField` | string | `"body"` | Name of the message-text field |
+| `simField` | string | `"sim"` | Name of the optional SIM field |
+| `startOnBoot` | bool | `true` | Restart the gateway after a reboot |
+| `wakeLock` | bool | `true` | Keep the CPU awake while running |
+| `deviceName` | string | phone model | Label sent to the server in `device` |
+
+**Template (the AI fills in the domain and token; keep every key)**
+
+```json
+{
+  "pollUrl": "https://YOUR-DOMAIN/api/device/sms/next",
+  "pollMethod": "GET",
+  "resultUrl": "https://YOUR-DOMAIN/api/device/sms/{id}/result",
+  "authType": "BEARER",
+  "authUser": "",
+  "token": "YOUR-DEVICE-TOKEN",
+  "authName": "X-API-Key",
+  "extraHeaders": "",
+  "timeoutSec": 20,
+  "pollIntervalSec": 15,
+  "maxBackoffSec": 300,
+  "wifiOnly": false,
+  "quietEnabled": false,
+  "quietStartHour": 23,
+  "quietEndHour": 6,
+  "simSlot": 0,
+  "sendDelaySec": 3,
+  "maxPerHour": 0,
+  "defaultCountryCode": "",
+  "reportDelivery": true,
+  "idField": "id",
+  "toField": "to",
+  "bodyField": "body",
+  "simField": "sim",
+  "startOnBoot": true,
+  "wakeLock": true,
+  "deviceName": "My SMS Phone"
+}
+```
+
+**Rules for the AI producing this block**
+* Output it as a single fenced `json` code block (so the chat's *Copy* button copies only the JSON), with a one-line instruction
+  to the user: *"Copy this, then in the app: Settings > Backup > Import settings from clipboard."*
+* Replace `YOUR-DOMAIN` and `YOUR-DEVICE-TOKEN` with the real values. Match `pollUrl`/`resultUrl` to the routes it actually built,
+  including any `/api` prefix. `resultUrl` must contain the literal text `{id}` unless the server's result route takes the id only from the body.
+* If the server was built with a non-default auth method, set `authType`/`authName`/`authUser` accordingly. If it uses
+  non-default JSON field names, set `idField`/`toField`/`bodyField` to match.
+* Set `defaultCountryCode` if the owner mentioned their country (e.g. Pakistan: `"92"`).
+* **Security warning to print next to the block:** it contains the device token. Paste it only on the owner's own phone,
+  and clear the clipboard after importing. Other apps may be able to read the clipboard. For extra safety, leave `"token": ""`
+  and type the token in the app by hand.
 
 ---
 
-*Spec version 1, matching Private SMS Gateway app v0.1.x. Reference implementations (Laravel and Node) are in the app
+*Spec version 1.1, matching Private SMS Gateway app v0.1.x. Reference implementations (Laravel and Node) are in the app
 repository under `server-examples/`.*
